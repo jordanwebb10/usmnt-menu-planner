@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>USMNT Nov 2026 — Camp Menu Planning Board & Recipe Book</title>
+  <title>USMNT Camp Menu Planning System — PostgreSQL `menu` Schema</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -16,8 +16,19 @@
       <div class="brand-group">
         <div class="crest-badge">USMNT</div>
         <div>
-          <div class="eyebrow">INTEGRATED PERFORMANCE SUPPORT &bull; PERFORMANCE NUTRITION</div>
-          <h1 class="app-title">November 2026 Camp Menu Planner <span class="title-sub">Nov 7–18 &bull; Atlanta, Kingston &amp; Cincinnati</span></h1>
+          <div class="eyebrow">INTEGRATED PERFORMANCE SUPPORT &bull; POSTGRESQL <code>menu</code> SCHEMA</div>
+          <div class="camp-selector-row">
+            <select id="campSelect" class="camp-select" title="Switch active camp from PostgreSQL menu.camp">
+              <option value="1">November 2026 Camp (vs. Haiti)</option>
+            </select>
+            <button class="btn-header-sm" id="btnNewCamp" title="Create a new camp in PostgreSQL">＋ New Camp</button>
+            <button class="btn-header-sm" id="btnEditCampMeta" title="Rename camp or edit subtitle">✎</button>
+            <label class="btn-header-sm upload-lbl" title="Upload an Excel (.xlsx/.csv) schedule or menu to populate dates, event times, meals, and dishes">
+              📤 Upload Excel Schedule
+              <input type="file" id="excelUploadInput" accept=".xlsx,.xls,.csv" hidden />
+            </label>
+          </div>
+          <div class="camp-subtitle" id="campSubtitleText">Nov 7–18, 2026 &bull; Atlanta, Kingston &amp; Cincinnati</div>
         </div>
       </div>
 
@@ -26,17 +37,17 @@
           <span class="stat-val" id="statChangesCount">0</span>
           <span class="stat-lbl">Menu Moves</span>
         </div>
-        <div class="stat-pill stat-warn" id="statLiveFlagsPill" title="Live dynamic rule flags on current menu board">
+        <div class="stat-pill stat-warn clickable-pill" id="statLiveFlagsPill" title="Click to open AI Audit & Gemini 5 Schema Inspector">
           <span class="stat-val" id="statLiveFlags">0</span>
-          <span class="stat-lbl">Audit Flags</span>
+          <span class="stat-lbl">🤖 Audit Flags</span>
         </div>
         <div class="stat-pill">
           <span class="stat-val" id="statRecipeCount">258</span>
           <span class="stat-lbl">BEO Recipes</span>
         </div>
-        <div class="stat-pill stat-sync">
-          <span class="stat-val" id="syncStatusDot">● Live</span>
-          <span class="stat-lbl" id="syncStatusText">Synced</span>
+        <div class="stat-pill stat-sync" id="pgStatusPill">
+          <span class="stat-val" id="syncStatusDot">● Postgres</span>
+          <span class="stat-lbl" id="syncStatusText">menu schema</span>
         </div>
       </div>
     </div>
@@ -53,35 +64,69 @@
         <span class="tab-icon">🩺</span> Dietitian &amp; Culinary Audit (20-Pt)
       </button>
       <button class="nav-tab" data-tab="rules">
-        <span class="tab-icon">⚖️</span> USMNT Audit Rules (1.1–6.2)
+        <span class="tab-icon">⚖️</span> USMNT Audit Rules (Editable &rarr; AI)
       </button>
     </nav>
   </header>
 
   <main class="app-main">
-    <!-- TAB 1: VISUAL DRAG & DROP MENU PLANNING BOARD -->
+    <!-- TAB 1: DYNAMIC, PIVOTABLE MENU PLANNING BOARD -->
     <section class="tab-panel active" id="tab-planner">
-      <!-- Clean Planning Controls Bar -->
+      <!-- Row 1: View & Structure Controls -->
       <div class="board-toolbar">
         <div class="toolbar-group">
-          <label class="toolbar-lbl">Days:</label>
+          <label class="toolbar-lbl">🔄 Pivot Board:</label>
+          <select id="pivotModeSelect" class="select-input select-highlight" title="Pivot how rows and columns are arranged">
+            <option value="days-cols">Columns = Days &times; Rows = Meals &amp; Categories (Default)</option>
+            <option value="meals-cols">Columns = Meals &amp; Categories &times; Rows = Days (Transposed)</option>
+            <option value="day-focus">Columns = Meals Side-by-Side &times; Rows = Categories (Day Focus)</option>
+          </select>
+          <select id="focusDaySelect" class="select-input" style="display:none;" title="Select Day for Day Focus Pivot"></select>
+        </div>
+
+        <div class="toolbar-group">
+          <label class="toolbar-lbl">📂 Meal Setup:</label>
+          <select id="mealTemplateSelect" class="select-input" title="Load a saved Meal & Category structure by location">
+            <option value="">Load Saved Meal Template...</option>
+          </select>
+          <button class="btn-tool" id="btnSaveMealTemplate" title="Save current Meals & Categories as a reusable Location Template in Postgres">💾 Save Template</button>
+        </div>
+
+        <div class="toolbar-group">
+          <label class="toolbar-lbl">Build Structure:</label>
+          <button class="btn-tool btn-add-struct" id="btnAddDay">＋ Add Day</button>
+          <button class="btn-tool btn-add-struct" id="btnAddMeal">＋ Add Meal</button>
+          <button class="btn-tool btn-add-struct" id="btnAddCategory">＋ Add Category</button>
+          <button class="btn-tool" id="btnManageTags">🏷️ Tags</button>
+        </div>
+
+        <div class="toolbar-actions">
+          <button class="btn-tool" id="btnUndo" title="Undo (Ctrl+Z)" disabled>↶</button>
+          <button class="btn-tool" id="btnRedo" title="Redo (Ctrl+Y)" disabled>↷</button>
+          <button class="btn-tool btn-ai" id="btnOpenAiAudit" title="Run AI Audit & generate Gemini 5 JSON Schema from active Tab 4 rules">🤖 AI Audit &amp; Schema</button>
+          <button class="btn-tool btn-accent" id="btnAutoFixTypos" title="Clean up BEO spelling & add black pepper cofactor">✨ Clean Up BEOs</button>
+          <button class="btn-tool btn-export" id="btnSavePostgres" title="Save camp state to PostgreSQL menu.camp">💾 Save DB</button>
+          <button class="btn-tool btn-export" id="btnExportXlsx" title="Download Excel (.xlsx)">⬇ .XLSX</button>
+        </div>
+      </div>
+
+      <!-- Row 2: Filters & Dock Controls -->
+      <div class="board-subtoolbar">
+        <div class="toolbar-group">
+          <label class="toolbar-lbl">Filter Days:</label>
           <div class="pill-group" id="cityFilterGroup">
-            <button class="filter-pill active" data-city="all">All 12 Days</button>
-            <button class="filter-pill" data-city="Atlanta">Atlanta (Nov 7–12)</button>
-            <button class="filter-pill" data-city="Kingston">Kingston (Nov 12–14)</button>
-            <button class="filter-pill" data-city="Cincinnati">Cincinnati (Nov 15–18)</button>
+            <button class="filter-pill active" data-city="all">All Days</button>
+            <button class="filter-pill" data-city="Atlanta">Atlanta</button>
+            <button class="filter-pill" data-city="Kingston">Kingston</button>
+            <button class="filter-pill" data-city="Cincinnati">Cincinnati</button>
             <button class="filter-pill" data-city="match">MD-1 &amp; Match Days</button>
           </div>
         </div>
 
         <div class="toolbar-group">
-          <label class="toolbar-lbl">Meal Filter:</label>
+          <label class="toolbar-lbl">Filter Meals:</label>
           <div class="pill-group" id="mealFilterGroup">
             <button class="filter-pill active" data-meal="all">All Meals</button>
-            <button class="filter-pill" data-meal="Breakfast">🍳 Breakfast</button>
-            <button class="filter-pill" data-meal="Lunch">🥗 Lunch</button>
-            <button class="filter-pill" data-meal="Dinner">🍽️ Dinner / Pre-Match</button>
-            <button class="filter-pill" data-meal="Post-Match">⚽ Post-Match</button>
           </div>
         </div>
 
@@ -89,7 +134,7 @@
           <label class="toolbar-lbl">Card Drop:</label>
           <div class="pill-group" id="dropModeGroup">
             <button class="filter-pill active" data-dropmode="swap" title="Dropping a card onto another card swaps their positions">⇄ Swap on Card</button>
-            <button class="filter-pill" data-dropmode="move" title="Dropping a card always adds/moves it into the slot">＋ Add to Slot</button>
+            <button class="filter-pill" data-dropmode="move" title="Dropping a card adds/moves it into the slot">＋ Add to Slot</button>
           </div>
         </div>
 
@@ -100,29 +145,19 @@
           </label>
         </div>
 
-        <div class="toolbar-actions">
-          <button class="btn-tool" id="btnUndo" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
-          <button class="btn-tool" id="btnRedo" title="Redo (Ctrl+Y)" disabled>↷ Redo</button>
-          <button class="btn-tool btn-accent" id="btnAutoFixTypos" title="Clean up BEO spelling & add black pepper cofactor to turmeric scrambles">✨ Clean Up BEOs</button>
-          <button class="btn-tool btn-export" id="btnExportXlsx" title="Download formatted Excel (.xlsx) spreadsheet">⬇ Export .XLSX</button>
-          <button class="btn-tool btn-danger-outline" id="btnResetSheet" title="Reset board to original baseline">↺ Reset</button>
-          <button class="btn-tool btn-palette-toggle active" id="btnTogglePalette">📚 Recipe Library</button>
+        <div class="toolbar-group" style="margin-left:auto;">
+          <label class="toolbar-lbl">Library Dock:</label>
+          <div class="pill-group" id="dockPositionGroup">
+            <button class="filter-pill active" data-dock="bottom" title="Full-width menu board with horizontal recipe tray at bottom">⬇ Bottom Tray (Full-Width Board)</button>
+            <button class="filter-pill" data-dock="right" title="Side-by-side split">➡ Right Dock</button>
+            <button class="filter-pill" data-dock="hidden" title="Hide recipe library for maximum board space">✕ Hide</button>
+          </div>
         </div>
       </div>
 
-      <!-- Daily Standards Banner (Collapsible reminder of daily constants so they don't clutter the drag grid) -->
-      <div class="daily-constants-bar">
-        <span><strong>Daily Buffet Constants (Served Every Day):</strong></span>
-        <span class="const-chip">🥣 Oatmeal (Whole &amp; Almond Milk)</span>
-        <span class="const-chip">🍳 Omelet &amp; Poached Egg Station</span>
-        <span class="const-chip">🍓 Tropical &amp; Berry Fruit Line (Lunch &amp; Dinner)</span>
-        <span class="const-chip">🥗 Composed Salad Bar</span>
-        <span class="const-hint">Drag any recipe card between days or categories, click a card to view its recipe, or drag new dishes from the Recipe Library &rarr;</span>
-      </div>
-
-      <!-- Main Split Workspace: Planning Grid + Recipe Library Sidebar -->
-      <div class="planner-workspace" id="plannerWorkspace">
-        <!-- Scrollable Planning Grid (Columns = Days, Rows = Meal Categories) -->
+      <!-- Main Workspace: 100% Full-Width Board + Horizontal Multi-Column Recipe Library Tray -->
+      <div class="planner-workspace dock-bottom" id="plannerWorkspace">
+        <!-- Scrollable Planning Grid -->
         <div class="board-viewport" id="boardViewport">
           <table class="planning-grid" id="planningGrid">
             <thead id="planningThead"></thead>
@@ -130,48 +165,64 @@
           </table>
         </div>
 
-        <!-- Right Docked Draggable Recipe Library -->
+        <!-- Upgraded Wide Recipe & Swap Library Tray -->
         <aside class="palette-drawer" id="paletteDrawer">
-          <div class="palette-header">
-            <div>
-              <h3>📚 Recipe &amp; Swap Library</h3>
-              <p>Drag any recipe card into a day &amp; meal slot</p>
+          <div class="palette-top-bar">
+            <div class="palette-brand">
+              <h3>📚 Recipe &amp; Swap Library <span class="palette-count" id="paletteResultCount">(258)</span></h3>
+              <span class="palette-hint">Drag any recipe card into the planning board above, or click 📖 to inspect BEO specs</span>
             </div>
-            <button class="btn-close-sm" id="btnClosePalette" title="Hide library">&times;</button>
-          </div>
 
-          <!-- Custom Quick-Drag Dish Creator -->
-          <div class="custom-drag-box">
-            <label class="custom-lbl">Create &amp; Drag Custom Item:</label>
-            <input type="text" id="customDishInput" class="search-input" placeholder="Type any dish name & drag card below..." />
-            <div class="palette-card custom-draggable" id="customDraggableChip" draggable="true" data-dish="Chicken Sausage & Fresh Berries">
-              <span class="drag-dots">⋮⋮</span>
-              <span class="custom-chip-text" id="customChipText">Chicken Sausage &amp; Fresh Berries</span>
-              <span class="custom-badge">Drag Me</span>
+            <!-- Custom Quick-Drag Dish Creator inline -->
+            <div class="custom-drag-inline">
+              <input type="text" id="customDishInput" class="search-input custom-inp" placeholder="Type custom item to drag..." />
+              <div class="palette-card custom-draggable" id="customDraggableChip" draggable="true" data-dish="Chicken Sausage & Fresh Berries">
+                <span class="drag-dots">⋮⋮</span>
+                <span class="custom-chip-text" id="customChipText">Chicken Sausage &amp; Fresh Berries</span>
+                <span class="custom-badge">Drag Custom</span>
+              </div>
             </div>
           </div>
 
-          <!-- Palette Search & Filter -->
-          <div class="palette-controls">
-            <input type="search" id="paletteSearchInput" class="search-input" placeholder="Search 258 recipes (e.g. salmon, rice, vegan)..." />
+          <!-- Upgraded Multi-Facet Category + Culinary Type + Tag Searcher -->
+          <div class="palette-search-bar">
+            <div class="p-search-col">
+              <input type="search" id="paletteSearchInput" class="search-input" placeholder="🔍 Search by dish name, ingredient (e.g. salmon, quinoa, ginger, rice)..." />
+            </div>
+            <div class="p-filter-col">
+              <select id="paletteSectionSelect" class="select-input">
+                <option value="all">All Meal Sections</option>
+              </select>
+            </div>
+            <div class="p-filter-col">
+              <select id="paletteDishTypeSelect" class="select-input">
+                <option value="all">All Culinary Categories (Carbs, Veg, Proteins...)</option>
+                <option value="egg">🍳 Eggs &amp; Scrambles</option>
+                <option value="oats|chia|pancake|waffle|french toast|muffin|bread">🥞 Oats, Griddle &amp; Bakery</option>
+                <option value="chicken|turkey">🍗 Poultry (Chicken / Turkey)</option>
+                <option value="salmon|cod|halibut|seabass|snapper|tuna|shrimp|scallop|lobster|sushi">🐟 Fish &amp; Seafood</option>
+                <option value="beef|steak|flank|tenderloin|oxtail|short rib|pork|lamb|bacon|sausage">🥩 Beef, Pork &amp; Lamb</option>
+                <option value="tofu|tempeh|vegan|lentil|chickpea|bean">🌱 Plant-Based / Vegan</option>
+                <option value="rice|risotto|quinoa|farro|noodle|pasta|potato|sweet potato|polenta|gnocchi">🍚 Carbs, Starches &amp; Grains</option>
+                <option value="broccoli|broccolini|asparagus|carrot|squash|zucchini|cauliflower|brussel|spinach|green bean|artichoke|mushroom|edamame|snowpea|collard">🥦 Vegetables &amp; Greens</option>
+                <option value="berry|berries|fruit|banana|apple|mango|pineapple|kiwi|melon|acai|açaí">🍓 Fruits &amp; Smoothie Bowls</option>
+                <option value="salad">🥗 Composed Salads</option>
+                <option value="soup|broth|stew">🍲 Soups &amp; Broths</option>
+                <option value="station|bar|taco|burrito|quesadilla|panini|sandwich|flatbread|pizza">👨‍🍳 Action Stations &amp; Handhelds</option>
+              </select>
+            </div>
             <div class="palette-filter-pills" id="paletteFilterPills">
-              <button class="mini-pill active" data-pfilter="all">All</button>
-              <button class="mini-pill pill-swap" data-pfilter="Swap Recommendation">★ Swap Ideas</button>
-              <button class="mini-pill" data-pfilter="Functional Food">⚡ Functional</button>
-              <button class="mini-pill" data-pfilter="MD-1 Safe">🛡️ MD-1</button>
-              <button class="mini-pill" data-pfilter="100% Plant-Based">🌱 Vegan</button>
-              <button class="mini-pill" data-pfilter="Breakfast">Breakfast</button>
-              <button class="mini-pill" data-pfilter="Protein">Proteins</button>
-              <button class="mini-pill" data-pfilter="Starch">Starches</button>
+              <button class="mini-pill active" data-pfilter="all">All Tags</button>
             </div>
           </div>
 
+          <!-- Wide Multi-Column Recipe Card Grid inside Drawer -->
           <div class="palette-list" id="paletteList"></div>
         </aside>
       </div>
     </section>
 
-    <!-- TAB 2: MASTER RECIPE BOOK -->
+    <!-- TAB 2: MASTER RECIPE BOOK (Paused per user note — kept intact) -->
     <section class="tab-panel" id="tab-recipes">
       <div class="toolbar">
         <div class="search-box">
@@ -196,20 +247,13 @@
 
       <div class="tag-bar" id="recipeTagBar">
         <button class="tag-chip active" data-tag="all">All Items</button>
-        <button class="tag-chip" data-tag="Swap Recommendation">★ Swap Recommendations</button>
-        <button class="tag-chip" data-tag="Functional Food">⚡ Functional Food</button>
-        <button class="tag-chip" data-tag="MD-1 Safe">🛡️ MD-1 Safe</button>
-        <button class="tag-chip" data-tag="Match Day">⚽ Match Day Fuel</button>
-        <button class="tag-chip" data-tag="Low-FODMAP">🌿 Low-FODMAP</button>
-        <button class="tag-chip" data-tag="100% Plant-Based">🌱 100% Plant-Based</button>
-        <button class="tag-chip" data-tag="Athlete Request">★ Athlete Request</button>
       </div>
 
       <div class="results-meta" id="recipeResultsMeta">Showing 258 recipes</div>
       <div class="recipe-grid" id="recipeGridContainer"></div>
     </section>
 
-    <!-- TAB 3: DIETITIAN & CULINARY AUDIT -->
+    <!-- TAB 3: DIETITIAN & CULINARY AUDIT (Paused per user note — kept intact) -->
     <section class="tab-panel" id="tab-audit">
       <div class="audit-intro">
         <div>
@@ -235,46 +279,29 @@
           <div class="audit-list" id="culinaryAuditList"></div>
         </div>
       </div>
+    </section>
 
-      <div class="special-focus-card">
-        <div class="sf-header">
-          <h3>✈️ Part 3: Kingston Post-Match Meal &amp; Charter Flight Strategy (Sat Nov 14 &rarr; Sun Nov 15)</h3>
-          <span class="badge">AC Hotel Kingston &rarr; ~1:00 AM Cincinnati Arrival</span>
-        </div>
-        <div class="sf-grid">
-          <div class="sf-box">
-            <h4>⚽ Making Kingston Post-Match Healthy, Fun &amp; Recovery-Focused</h4>
-            <ul>
-              <li><strong>What Works Well Now:</strong> <em>Chimichurri Steak Tips</em> (iron/zinc), <em>Lemon Pepper Salmon</em> (omega-3s), and the <em>Açaí Station</em> (polyphenols) provide strong recovery foundations.</li>
-              <li><strong>Discussion Ideas for the Chef:</strong>
-                <ul>
-                  <li>Consider an authentic Jamaican touch (e.g., grilled jerk chicken/snapper or festival bread) so the away meal feels memorable.</li>
-                  <li>Discuss lighter alternatives for the heavy <em>Mac N Cheese / Roasted Brussels Sprouts</em> post-match sides.</li>
-                  <li>At the Açaí &amp; Ice Cream station, pair with recovery boosters (tart cherry, whey/plant protein, mango/pineapple, chia).</li>
-                </ul>
-              </li>
-            </ul>
+    <!-- TAB 4: EDITABLE USMNT AUDIT RULES (Feeds into AI Audit & Board Flags) -->
+    <section class="tab-panel" id="tab-rules">
+      <div class="audit-intro">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+          <div>
+            <h2>⚖️ Editable USMNT Menu Audit Rules (`menu.audit_rule` &rarr; AI Audit Engine)</h2>
+            <p>These rules are stored in your PostgreSQL <code>menu.audit_rule</code> table and feed directly into both the <strong>Live Board Flag Engine</strong> and the <strong>Gemini AI Audit Schema</strong>. Toggle rules on/off, edit triggers/prompts inline, or add new rules.</p>
           </div>
-          <div class="sf-box">
-            <h4>🛫 Charter Flight Snacks (Kingston &rarr; Cincinnati)</h4>
-            <ul>
-              <li><strong>Cabin Hydration:</strong> Tart cherry shots + high-electrolyte fluids at boarding to counter cabin altitude dehydration and support sleep onset.</li>
-              <li><strong>Slow-Release Protein Before Sleep:</strong> Greek yogurt parfaits, cottage cheese bowls, or a light turkey/avocado wrap for late-digestion amino acid delivery.</li>
-              <li><strong>Clean Grab-and-Go Basket:</strong> 100% natural single-squeeze nut butter packs, bananas, clementines, dates, dark chocolate almonds, and low-sugar jerky/biltong.</li>
-            </ul>
+          <div style="display:flex; gap:0.5rem;">
+            <button class="btn-primary" id="btnAddRule">＋ Add New Audit Rule</button>
+            <button class="btn-tool btn-ai" id="btnRunAiFromRules">🤖 Run AI Audit &amp; View Gemini Schema</button>
           </div>
         </div>
       </div>
-    </section>
 
-    <!-- TAB 4: USMNT AUDIT RULES -->
-    <section class="tab-panel" id="tab-rules">
       <div class="toolbar">
         <div class="search-box">
-          <input type="search" id="rulesSearchInput" class="search-input" placeholder="Search the 19 USMNT Menu Audit Rules..." />
+          <input type="search" id="rulesSearchInput" class="search-input" placeholder="Search rules by code, pillar, trigger, or prompt..." />
         </div>
         <div class="pill-group" id="rulesCatFilter">
-          <button class="filter-pill active" data-cat="all">All 6 Pillars (19 Rules)</button>
+          <button class="filter-pill active" data-cat="all">All Pillars</button>
           <button class="filter-pill" data-cat="1. Functional Foods">1. Functional</button>
           <button class="filter-pill" data-cat="2. Match-Day-Minus-1 (MD-1)">2. MD-1</button>
           <button class="filter-pill" data-cat="3. Match Day & MD+1">3. MD &amp; MD+1</button>
@@ -288,12 +315,14 @@
         <table class="rules-table">
           <thead>
             <tr>
-              <th>Rule Code</th>
-              <th>Pillar</th>
-              <th>Rule Name</th>
-              <th>Audit Trigger / What to Check</th>
+              <th style="width:65px;">Active</th>
+              <th style="width:95px;">Rule Code</th>
+              <th style="width:170px;">Pillar</th>
+              <th style="width:190px;">Rule Name</th>
+              <th>Audit Trigger / What AI Checks</th>
               <th>Discussion Prompt / Action</th>
-              <th>Nov 2026 Status</th>
+              <th style="width:120px;">Status</th>
+              <th style="width:95px;">Actions</th>
             </tr>
           </thead>
           <tbody id="rulesTableBody"></tbody>
@@ -302,7 +331,7 @@
     </section>
   </main>
 
-  <!-- QUICK ADD DISH POPOVER / MODAL -->
+  <!-- MODAL 1: QUICK ADD / TAG CARD POPOVER -->
   <div class="modal-backdrop" id="quickAddModal" aria-hidden="true">
     <div class="modal-dialog modal-sm" role="dialog" aria-modal="true">
       <div class="modal-header">
@@ -324,7 +353,133 @@
     </div>
   </div>
 
-  <!-- RECIPE & BEO MODAL -->
+  <!-- MODAL 2: TAG MANAGER & CARD TAGGER MODAL -->
+  <div class="modal-backdrop" id="tagModal" aria-hidden="true">
+    <div class="modal-dialog modal-sm" role="dialog" aria-modal="true">
+      <div class="modal-header">
+        <div>
+          <div class="modal-eyebrow" id="tagModalEyebrow">Tag Manager (`menu.tag_catalog`)</div>
+          <h2 class="modal-title" id="tagModalTitle">Manage &amp; Assign Tags</h2>
+        </div>
+        <button class="modal-close" id="tagModalCloseBtn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="tag-create-row">
+          <input type="text" id="newTagNameInput" class="search-input" placeholder="Create new tag (e.g. High Carb, Nightshade-Free, Berry)..." />
+          <button class="btn-primary" id="btnCreateNewTag">＋ Create Tag</button>
+        </div>
+        <p style="font-size:0.75rem; color:var(--text-muted); margin:0.65rem 0 0.4rem;">Click tags below to toggle on the selected dish/recipe (or manage global filter tags):</p>
+        <div class="tag-checkbox-grid" id="tagCheckboxGrid"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-primary" id="tagModalDoneBtn">Save &amp; Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 3: EDIT / ADD AUDIT RULE MODAL -->
+  <div class="modal-backdrop" id="ruleEditModal" aria-hidden="true">
+    <div class="modal-dialog modal-sm" role="dialog" aria-modal="true">
+      <div class="modal-header">
+        <div>
+          <div class="modal-eyebrow">PostgreSQL `menu.audit_rule`</div>
+          <h2 class="modal-title" id="ruleModalTitle">Edit USMNT Audit Rule</h2>
+        </div>
+        <button class="modal-close" id="ruleModalCloseBtn">&times;</button>
+      </div>
+      <div class="modal-body" style="display:flex; flex-direction:column; gap:0.65rem;">
+        <div>
+          <label class="toolbar-lbl">Rule Code (e.g. Rule 1.4):</label>
+          <input type="text" id="ruleCodeInput" class="search-input" />
+        </div>
+        <div>
+          <label class="toolbar-lbl">Pillar:</label>
+          <input type="text" id="rulePillarInput" class="search-input" list="pillarList" />
+          <datalist id="pillarList">
+            <option value="1. Functional Foods"></option>
+            <option value="2. Match-Day-Minus-1 (MD-1)"></option>
+            <option value="3. Match Day & MD+1"></option>
+            <option value="4. Culinary Variety"></option>
+            <option value="5. Plant-Based & Soy"></option>
+            <option value="6. BEO Hygiene"></option>
+          </datalist>
+        </div>
+        <div>
+          <label class="toolbar-lbl">Rule Name:</label>
+          <input type="text" id="ruleNameInput" class="search-input" />
+        </div>
+        <div>
+          <label class="toolbar-lbl">Audit Trigger / What AI Checks:</label>
+          <textarea id="ruleTriggerInput" class="search-input" rows="3"></textarea>
+        </div>
+        <div>
+          <label class="toolbar-lbl">Discussion Prompt / Action:</label>
+          <textarea id="ruleActionInput" class="search-input" rows="3"></textarea>
+        </div>
+        <div style="display:flex; gap:1rem; align-items:center;">
+          <div style="flex:1;">
+            <label class="toolbar-lbl">Status Label:</label>
+            <input type="text" id="ruleStatusInput" class="search-input" value="Active" />
+          </div>
+          <label class="toggle-check" style="padding-top:1rem;">
+            <input type="checkbox" id="ruleActiveCheck" checked />
+            <span>Enabled in AI Audit</span>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" id="ruleModalCancelBtn">Cancel</button>
+        <button class="btn-primary" id="ruleModalSaveBtn">💾 Save Rule to Postgres</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 4: AI AUDIT & GEMINI 5 SCHEMA INSPECTOR -->
+  <div class="modal-backdrop" id="aiAuditModal" aria-hidden="true">
+    <div class="modal-dialog" role="dialog" aria-modal="true" style="max-width:960px;">
+      <div class="modal-header">
+        <div>
+          <div class="modal-eyebrow">HYBRID RULE ENGINE + GEMINI AI SKILL SCHEMA</div>
+          <h2 class="modal-title">🤖 How the Audit Flag System Works &amp; Gemini 5 Schema</h2>
+        </div>
+        <button class="modal-close" id="aiModalCloseBtn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="ai-explainer-grid">
+          <div class="ai-exp-box">
+            <h4>⚡ Layer 1: Real-Time Deterministic Checks (Instant on Drag &amp; Drop)</h4>
+            <p>Every time you drag a card, the browser immediately checks your active <strong>Tab 4 Rules</strong> for mathematical patterns: <strong>Consecutive Day Streaks (&gt;3d)</strong>, <strong>Same-Day &amp; Back-to-Back Collisions</strong>, <strong>MD-1 Tree Nuts / Heavy Cream / Cruciferous Fiber</strong>, <strong>Turmeric + Black Pepper Synergy</strong>, and <strong>BEO Typos</strong>.</p>
+          </div>
+          <div class="ai-exp-box">
+            <h4>🧠 Layer 2: Gemini AI Skill Audit (`menu-plan-auditor` + Tab 4 Rules)</h4>
+            <p>Packages your live <strong>PostgreSQL `menu.audit_rule` rows</strong> + <strong>`menu-plan-auditor` skill</strong> + <strong>Camp Schedule &amp; Menu Board JSON</strong> into a structured schema for Gemini. Gemini evaluates nuanced culinary cohesion, arrival/regen meal timing, and bioavailability, returning structured JSON flags that render directly on the cards.</p>
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin:0.85rem 0 0.4rem;">
+          <label class="toolbar-lbl">Live Gemini AI Request Schema (Skill + Active Tab 4 Rules + Current Camp Menu):</label>
+          <div style="display:flex; gap:0.5rem;">
+            <button class="btn-tool btn-accent" id="btnCopyGeminiSchema">📋 Copy Gemini Schema &amp; Prompt</button>
+            <button class="btn-tool btn-export" id="btnDownloadGeminiSchema">⬇ Download .JSON</button>
+          </div>
+        </div>
+        <textarea id="geminiSchemaTextarea" class="code-textarea" rows="10" readonly></textarea>
+
+        <div style="margin-top:0.85rem;">
+          <label class="toolbar-lbl">📥 Paste Gemini JSON Flag Output (Optional — applies AI flags directly to cards on the board):</label>
+          <div style="display:flex; gap:0.5rem; margin-top:0.35rem;">
+            <input type="text" id="geminiImportInput" class="search-input" placeholder='Paste {"flags": [{"laneId":"lu_proteins","dayIdx":2,"cardIdx":0,"ruleCode":"Rule 4.4","badgeText":"🤖 AI Flag","explanation":"..."}]}' />
+            <button class="btn-primary" id="btnApplyGeminiFlags">Apply AI Flags</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-primary" id="aiModalDoneBtn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 5: RECIPE & BEO MODAL -->
   <div class="modal-backdrop" id="recipeModal" aria-hidden="true">
     <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="modalRecipeTitle">
       <div class="modal-header">
@@ -338,6 +493,7 @@
       <div class="modal-body">
         <div class="modal-meta-bar">
           <div class="modal-tags" id="modalRecipeTags"></div>
+          <button class="btn-tool" id="btnTagThisRecipe">🏷️ Edit Recipe Tags</button>
           <div class="scale-control">
             <span>Scale Batch:</span>
             <button class="scale-btn active" data-mscale="1">1x (10 Portions)</button>
